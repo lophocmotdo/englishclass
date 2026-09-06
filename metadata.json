@@ -1,0 +1,6 @@
+{
+  "name": "Quản Lý Lịch Dạy",
+  "description": "Ứng dụng quản lý lịch dạy học trực tuyến và bài giảng.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

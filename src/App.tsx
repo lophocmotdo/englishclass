@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Video, ExternalLink, Save, Trash2, Check, Globe } from 'lucide-react';
 import { Session } from './types';
 import { generateSchedule } from './data';
+import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
+import { db } from './lib/firebase';
 
 const dict = {
   en: {
@@ -21,7 +23,8 @@ const dict = {
     meetLink: "Google Meet Link",
     topic: "Lesson Topic",
     topicPlaceholder: "Ex: Grammar Unit 1...",
-    docLink: "Document / Assignment Link",
+    docLink1: "Link 1 (English)",
+    docLink2: "Link 2 (Vietnamese)",
     docPlaceholder: "Google Drive, PDF Link...",
     save: "Save",
     clear: "Clear",
@@ -47,7 +50,8 @@ const dict = {
     meetLink: "Link Google Meet",
     topic: "Chủ đề bài học (Topic)",
     topicPlaceholder: "VD: Grammar Unit 1...",
-    docLink: "Link tài liệu / Bài tập",
+    docLink1: "Link 1 (English)",
+    docLink2: "Link 2 (Vietnamese)",
     docPlaceholder: "Link Google Drive, PDF...",
     save: "Lưu",
     clear: "Xóa",
@@ -57,8 +61,6 @@ const dict = {
     copyright: "Bản quyền @2026 - TIẾNG ANH THẦY KIỆT"
   }
 };
-
-const getStorageKey = (year: string, month: string) => `teacher_schedule_${year}-${month}`;
 
 const SessionField = ({
   label,
@@ -147,21 +149,33 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState<string>('09');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [defaultMeetLink, setDefaultMeetLink] = useState('');
+  const [loading, setLoading] = useState(true);
 
   // Load data when month changes
   useEffect(() => {
-    const saved = localStorage.getItem(getStorageKey(selectedYear, selectedMonth));
-    if (saved) {
-      setSessions(JSON.parse(saved));
-    } else {
-      setSessions(generateSchedule(parseInt(selectedYear, 10), parseInt(selectedMonth, 10)));
-    }
+    setLoading(true);
+    const docRef = doc(db, 'schedules', `${selectedYear}-${selectedMonth}`);
+    
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setSessions(docSnap.data().sessions || []);
+        setLoading(false);
+      } else {
+        // Document doesn't exist, generate default and save it
+        const defaultData = generateSchedule(parseInt(selectedYear, 10), parseInt(selectedMonth, 10));
+        setDoc(docRef, { sessions: defaultData }).then(() => {
+          // The onSnapshot will fire again after setDoc
+        });
+      }
+    });
+
+    return () => unsubscribe();
   }, [selectedYear, selectedMonth]);
 
   // Save data whenever sessions change
   const saveSessions = useCallback((newSessions: Session[]) => {
-    setSessions(newSessions);
-    localStorage.setItem(getStorageKey(selectedYear, selectedMonth), JSON.stringify(newSessions));
+    const docRef = doc(db, 'schedules', `${selectedYear}-${selectedMonth}`);
+    setDoc(docRef, { sessions: newSessions }, { merge: true });
   }, [selectedYear, selectedMonth]);
 
   const updateField = (index: number, field: keyof Session, value: string | boolean) => {
@@ -268,7 +282,11 @@ export default function App() {
         </header>
 
         <main className="space-y-4">
-          {sessions.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-8 text-slate-500 bg-white rounded-xl border border-slate-200 shadow-sm">
+              Đang tải dữ liệu... / Loading...
+            </div>
+          ) : sessions.length === 0 ? (
             <div className="text-center py-8 text-slate-500 bg-white rounded-xl border border-slate-200 shadow-sm">
               {t.noData}
             </div>
@@ -331,14 +349,24 @@ export default function App() {
                     onSave={(val) => updateField(index, 'topic', val)}
                     t={t}
                   />
-                  <SessionField
-                    label={t.docLink}
-                    value={session.docLink || ""}
-                    placeholder={t.docPlaceholder}
-                    isLink={true}
-                    onSave={(val) => updateField(index, 'docLink', val)}
-                    t={t}
-                  />
+                  <div className="flex flex-col gap-3">
+                    <SessionField
+                      label={t.docLink1}
+                      value={session.docLink || ""}
+                      placeholder={t.docPlaceholder}
+                      isLink={true}
+                      onSave={(val) => updateField(index, 'docLink', val)}
+                      t={t}
+                    />
+                    <SessionField
+                      label={t.docLink2}
+                      value={session.docLink2 || ""}
+                      placeholder={t.docPlaceholder}
+                      isLink={true}
+                      onSave={(val) => updateField(index, 'docLink2', val)}
+                      t={t}
+                    />
+                  </div>
                 </div>
               </div>
             ))

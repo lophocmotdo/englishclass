@@ -6,5 +6,6 @@ export interface Session {
   meetLink: string;
   topic: string;
   docLink: string;
+  docLink2?: string;
   done: boolean;
 }

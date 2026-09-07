@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Video, ExternalLink, Save, Trash2, Check, Globe } from 'lucide-react';
+import { Video, ExternalLink, Save, Trash2, Check, Globe, Lock, Unlock } from 'lucide-react';
 import { Session } from './types';
 import { generateSchedule } from './data';
 import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
@@ -31,7 +31,15 @@ const dict = {
     openLink: "Open link",
     mon: "Monday",
     wed: "Wednesday",
-    copyright: "Copyright @2026 - TIẾNG ANH THẦY KIỆT"
+    copyright: "Copyright @2026 - TIẾNG ANH THẦY KIỆT",
+    enterPassword: "Enter password to edit:",
+    wrongPassword: "Wrong password! Changes not saved.",
+    authRequired: "Password Required",
+    unlock: "Unlock Editing",
+    locked: "Locked",
+    unlocked: "Editing Enabled",
+    cancel: "Cancel",
+    confirm: "Confirm"
   },
   vi: {
     title: "Quản Lý Lịch Dạy & Bài Giảng",
@@ -58,7 +66,15 @@ const dict = {
     openLink: "Mở link",
     mon: "Thứ Hai",
     wed: "Thứ Tư",
-    copyright: "Bản quyền @2026 - TIẾNG ANH THẦY KIỆT"
+    copyright: "Bản quyền @2026 - TIẾNG ANH THẦY KIỆT",
+    enterPassword: "Nhập mật khẩu để thay đổi:",
+    wrongPassword: "Sai mật khẩu! Không thể lưu thay đổi.",
+    authRequired: "Yêu Cầu Mật Khẩu",
+    unlock: "Mở Khóa Chỉnh Sửa",
+    locked: "Đã Khóa",
+    unlocked: "Đã Mở Khóa",
+    cancel: "Hủy",
+    confirm: "Xác Nhận"
   }
 };
 
@@ -68,7 +84,8 @@ const SessionField = ({
   placeholder,
   isLink,
   onSave,
-  t
+  t,
+  requireAuth
 }: {
   label: string;
   value: string;
@@ -76,6 +93,7 @@ const SessionField = ({
   isLink?: boolean;
   onSave: (val: string) => void;
   t: typeof dict.en;
+  requireAuth: (action: () => void) => void;
 }) => {
   const [localVal, setLocalVal] = useState(value);
   const [saved, setSaved] = useState(false);
@@ -85,14 +103,18 @@ const SessionField = ({
   }, [value]);
 
   const handleSave = () => {
-    onSave(localVal);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    requireAuth(() => {
+      onSave(localVal);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    });
   };
 
   const handleClear = () => {
-    setLocalVal('');
-    onSave('');
+    requireAuth(() => {
+      setLocalVal('');
+      onSave('');
+    });
   };
 
   return (
@@ -150,6 +172,41 @@ export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [defaultMeetLink, setDefaultMeetLink] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
+  const requireAuth = (action: () => void) => {
+    if (isAuthenticated) {
+      action();
+    } else {
+      setPendingAction(() => action);
+      setShowAuthModal(true);
+      setPasswordInput('');
+    }
+  };
+
+  const handleAuthSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === '0979033830') {
+      setIsAuthenticated(true);
+      setShowAuthModal(false);
+      if (pendingAction) {
+        pendingAction();
+        setPendingAction(null);
+      }
+    } else {
+      alert(t.wrongPassword);
+      setPasswordInput('');
+    }
+  };
+
+  const handleCancelAuth = () => {
+    setShowAuthModal(false);
+    setPendingAction(null);
+    setPasswordInput('');
+  };
 
   // Load data when month changes
   useEffect(() => {
@@ -158,7 +215,15 @@ export default function App() {
     
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
-        setSessions(docSnap.data().sessions || []);
+        let loadedSessions = docSnap.data().sessions || [];
+        
+        // Auto-fix for Sept 2026 if it started on 02/09 instead of 07/09
+        if (selectedYear === '2026' && selectedMonth === '09' && loadedSessions.length > 0 && loadedSessions[0].date === '02/09') {
+          loadedSessions = generateSchedule(2026, 9);
+          setDoc(docRef, { sessions: loadedSessions }, { merge: true });
+        }
+        
+        setSessions(loadedSessions);
         setLoading(false);
       } else {
         // Document doesn't exist, generate default and save it
@@ -185,16 +250,20 @@ export default function App() {
   };
 
   const toggleDone = (index: number) => {
-    const newSessions = [...sessions];
-    newSessions[index] = { ...newSessions[index], done: !newSessions[index].done };
-    saveSessions(newSessions);
+    requireAuth(() => {
+      const newSessions = [...sessions];
+      newSessions[index] = { ...newSessions[index], done: !newSessions[index].done };
+      saveSessions(newSessions);
+    });
   };
 
   const applyDefaultMeet = () => {
-    const link = defaultMeetLink.trim();
-    if (!link) return;
-    const newSessions = sessions.map(session => ({ ...session, meetLink: link }));
-    saveSessions(newSessions);
+    requireAuth(() => {
+      const link = defaultMeetLink.trim();
+      if (!link) return;
+      const newSessions = sessions.map(session => ({ ...session, meetLink: link }));
+      saveSessions(newSessions);
+    });
   };
 
   const displayDay = (dayStr: string) => {
@@ -205,8 +274,61 @@ export default function App() {
 
   return (
     <div className="bg-slate-100 text-slate-800 min-h-screen py-8 px-4 sm:px-6">
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 animate-in fade-in zoom-in duration-200">
+            <h3 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
+              <Lock className="w-5 h-5 text-red-500" />
+              {t.authRequired}
+            </h3>
+            <p className="text-sm text-slate-600 mb-4">{t.enterPassword}</p>
+            <form onSubmit={handleAuthSubmit}>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                autoFocus
+                className="w-full border border-slate-300 rounded-lg px-4 py-2 mb-4 focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="Password..."
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={handleCancelAuth}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-medium text-sm rounded-lg transition"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition"
+                >
+                  {t.confirm}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto">
-        <div className="flex justify-end mb-4">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            {isAuthenticated ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200">
+                <Unlock className="w-3.5 h-3.5" />
+                {t.unlocked}
+              </span>
+            ) : (
+              <button
+                onClick={() => requireAuth(() => {})}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded-lg border border-red-200 transition"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                {t.locked} - {t.unlock}
+              </button>
+            )}
+          </div>
           <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm items-center gap-1">
             <Globe className="w-4 h-4 text-slate-400 ml-2 mr-1" />
             <button
@@ -340,6 +462,7 @@ export default function App() {
                     isLink={true}
                     onSave={(val) => updateField(index, 'meetLink', val)}
                     t={t}
+                    requireAuth={requireAuth}
                   />
                   <SessionField
                     label={t.topic}
@@ -348,6 +471,7 @@ export default function App() {
                     isLink={false}
                     onSave={(val) => updateField(index, 'topic', val)}
                     t={t}
+                    requireAuth={requireAuth}
                   />
                   <div className="flex flex-col gap-3">
                     <SessionField
@@ -357,6 +481,7 @@ export default function App() {
                       isLink={true}
                       onSave={(val) => updateField(index, 'docLink', val)}
                       t={t}
+                      requireAuth={requireAuth}
                     />
                     <SessionField
                       label={t.docLink2}
@@ -365,6 +490,7 @@ export default function App() {
                       isLink={true}
                       onSave={(val) => updateField(index, 'docLink2', val)}
                       t={t}
+                      requireAuth={requireAuth}
                     />
                   </div>
                 </div>

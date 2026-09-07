@@ -6,6 +6,9 @@ export function generateSchedule(year: number, month: number): Session[] {
   let sessionId = 1;
 
   for (let day = 1; day <= daysInMonth; day++) {
+    // Custom start date for September 2026
+    if (year === 2026 && month === 9 && day < 7) continue;
+
     const date = new Date(year, month - 1, day);
     const dayOfWeek = date.getDay();
 
@@ -21,6 +24,7 @@ export function generateSchedule(year: number, month: number): Session[] {
         meetLink: "",
         topic: "",
         docLink: "",
+        docLink2: "",
         done: false
       });
 
